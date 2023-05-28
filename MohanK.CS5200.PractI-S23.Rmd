@@ -1,0 +1,454 @@
+---
+title: "Practicum I CS5200"
+author: Kartik Mohan(mohan.kar@northeastern.edu) and Raghav Sharma(sharma.rag@northeastern.edu)
+date: "Spring 2023"
+output:
+  pdf_document: default
+---
+
+```{r 1, eval = T, warning = F}
+knitr::opts_chunk$set(echo = TRUE)
+options(warn = -1)
+```
+
+## Connect to Database
+```{r ConnecttoDatabase, eval = T, warning = F}
+#importing all required libraries
+library(RMySQL) 
+
+#Set up and connect to MySQL database
+db_user     <- 'root'
+db_password <- 'dbms2023'
+db_name     <- 'mydb'
+db_host     <- 'localhost'
+db_port     <- 3306
+
+#Create a new database and connect to it from R
+mydb <- dbConnect(RMySQL::MySQL(), 
+                   user = db_user, password = db_password, dbname = db_name, 
+                   host = db_host, port = db_port)
+```
+
+
+## Create Database
+### Drop tables if exist
+```{sql dropIncidents, connection = mydb}
+DROP TABLE IF EXISTS incidents;
+```
+```{sql dropAirports, connection = mydb}
+DROP TABLE IF EXISTS airports;
+```
+```{sql dropConditions, connection = mydb}
+DROP TABLE IF EXISTS conditions;
+```
+```{sql dropAirlines, connection = mydb}
+DROP TABLE IF EXISTS airlines;
+```
+
+Setting the FK keys check ON
+```{sql FK_ON, connection = mydb}
+SET FOREIGN_KEY_CHECKS = 1;
+```
+
+B) Create airports table: Create a table that stores airports and states
+```{sql CreateAirport, connection = mydb}
+CREATE TABLE airports(
+  aid INTEGER AUTO_INCREMENT PRIMARY KEY NOT NULL,
+  airportName VARCHAR(32) NOT NULL,
+  airportCode VARCHAR(10),
+  state VARCHAR(32) NOT NULL
+)
+```
+
+D) Create conditions table: A lookup table for sky conditions 
+```{sql CreateCond, connection = mydb}
+CREATE TABLE conditions(
+  cid INTEGER PRIMARY KEY NOT NULL,
+  `condition` VARCHAR(32),
+  explanation VARCHAR(32)
+);
+```
+
+E) Create airlines table: Create a table that stores airlines
+```{sql CreateAirlines, connection=mydb}
+CREATE TABLE airlines(
+  eid INTEGER AUTO_INCREMENT PRIMARY KEY NOT NULL,
+  airlineName VARCHAR(32) NOT NULL,
+  airlineCode VARCHAR(10),
+  flag VARCHAR(32)
+);
+```
+
+A) Create a table incidents that stores wildlife strike incidents
+C) Link the incidents and airports tables via the origin foreign key in incidents to the primary key aid in airports. 
+F) Link the incidents and airlines tables via the airline foreign key in incidents to the primary key eid in airlines. 
+```{sql CreateIncidents, connection=mydb}
+CREATE TABLE incidents(
+  rid INTEGER PRIMARY KEY NOT NULL,
+  `dep.date` DATE NOT NULL,
+  origin INTEGER NOT NULL,
+  airline INTEGER NOT NULL,
+  aircraft VARCHAR(32) NOT NULL,
+  `flight.phase` VARCHAR(32) NOT NULL CHECK (`flight.phase` 
+      IN ('takeoff', 'landing', 'inflight', 'unknown')),
+  altitude INTEGER NOT NULL CHECK (altitude >= 0),
+  conditions INTEGER NOT NULL,
+  warned BOOLEAN,
+  CONSTRAINT fk_1 FOREIGN KEY(origin) REFERENCES airports(aid) ON UPDATE CASCADE,
+  CONSTRAINT fk_2 FOREIGN KEY(conditions) REFERENCES conditions(cid) ON UPDATE CASCADE,
+  CONSTRAINT fk_3 FOREIGN KEY(airline) REFERENCES airlines(eid) ON UPDATE CASCADE
+);
+```
+
+```{sql FullTable, connection = mydb}
+SHOW FULL TABLES;
+```
+
+```{sql descAirline, connection = mydb}
+DESCRIBE airlines;
+```
+```{sql descAirport, connection = mydb}
+DESCRIBE airports;
+```
+```{sql descCond, connection = mydb}
+DESCRIBE conditions;
+```
+```{sql descIncident, connection = mydb}
+DESCRIBE incidents;
+```
+
+## Data File
+5. Read the Bird Strikes CSV file
+```{r readdata, eval = T, warning = F}
+require(readr)
+fileName  <- "BirdStrikesData-V2.csv"
+```
+
+
+## Populate Database with Data
+6.Load raw data from CSV in data frame bds.raw
+```{r loaddata, eval = T, warning = F}
+bds.raw <- read.csv(fileName, header = TRUE, stringsAsFactors = FALSE)
+```
+
+All data preprocessing
+```{r dataPreprocess, eval = T, warning = F}
+# rename col1 to rid
+colnames(bds.raw)[1] = "rid"
+
+# drop extra columns
+drop <- c("model", "wildlife_struck", "impact", "damage", "remains_collected_flag", 
+          "Remarks", "wildlife_size", "species",  "heavy_flag"  )
+bds.raw <- bds.raw[,!(names(bds.raw) %in% drop)]
+
+# mapping pilot_warned_flag column value to TRUE & FALSE
+bds.raw$pilot_warned_flag[bds.raw$pilot_warned_flag == "Y"] <- TRUE
+bds.raw$pilot_warned_flag[bds.raw$pilot_warned_flag == "N"] <- FALSE
+
+# mapping all null values to 'unknown'
+bds.raw$airline = ifelse(bds.raw$airline =="", "unknown", bds.raw$airline)
+bds.raw$airport = ifelse(bds.raw$airport =="", "unknown", bds.raw$airport)
+
+# mapping all flight_phase column values
+bds.raw$flight_phase[bds.raw$flight_phase=="Climb"|
+                            bds.raw$flight_phase=="Take-off run"] <- "takeoff"
+
+bds.raw$flight_phase[bds.raw$flight_phase=="Landing Roll" |
+                       bds.raw$flight_phase=="Approach" ] <- "landing"
+
+bds.raw$flight_phase[bds.raw$flight_phase=="Descent"] <- "inflight"
+
+bds.raw$flight_phase[bds.raw$flight_phase=="" |
+                       bds.raw$flight_phase=="Parked" |
+                       bds.raw$flight_phase=="Taxi"] <- "unknown"
+```
+
+AIRPORT TABLE CREATE
+```{r AirportTable, eval = T, warning = F}
+
+temp <- bds.raw[!duplicated(bds.raw[c('airport','origin')]),]
+df_airports <- data.frame(aid = seq(1,length(temp$airport)),
+                          airportName = temp$airport,
+                          state = temp$origin)
+```
+
+AIRLINES TABLE CREATE
+```{r AirlineTable, eval = T, warning = F}
+
+temp <- bds.raw[!duplicated(bds.raw[c('airline')]),]
+df_airline <- data.frame(eid = seq(1,length(temp$airline)),
+                          airlineName = temp$airline)
+```
+
+CONDITIONS TABLE CREATE
+```{r CondTable, eval = T, warning = F}
+
+temp <- bds.raw[!duplicated(bds.raw[c('sky_conditions')]),]
+df_conditions <- data.frame(cid=seq(1,length(temp$sky_conditions)),
+                            condition=temp$sky_conditions)
+```
+
+INCIDENT TABLE CREATE     
+```{r TableIncident, eval = T, warning = F}
+
+df_incidents <- data.frame(rid=bds.raw$rid,
+                           dep.date = as.Date(bds.raw$flight_date, "%m/%d/%Y"),
+                           origin = -1,
+                           airline = -1,
+                           aircraft = bds.raw$aircraft,
+                           flight.phase = bds.raw$flight_phase,
+                           altitude = bds.raw$altitude_ft,
+                           conditions = -1,
+                           warned = bds.raw$pilot_warned_flag)
+
+#Copying the data into the FK keys variables from the respective PK keys
+rangex = 1:nrow(df_incidents)
+for (r in rangex) {
+  a <- df_airports$aid[which(df_airports$airportName == bds.raw$airport[r] & 
+                               df_airports$state == bds.raw$origin[r])]
+  df_incidents$origin[r] <- strtoi(a)
+  
+  a <- df_conditions$cid[which(df_conditions$condition == bds.raw$sky_conditions[r])]
+  df_incidents$conditions[r] <- strtoi(a)
+  
+  a <- df_airline$eid[which(df_airline$airlineName == bds.raw$airline[r])]
+  df_incidents$airline[r] <- strtoi(a)
+}
+```
+
+**Enabling DB write permission and bulk loading data into the tables**
+```{r DB, eval = T, warning = F}
+dbSendQuery(mydb, "SET GLOBAL local_infile = true;")
+dbWriteTable(mydb, "airports", df_airports, append = T,row.names=FALSE)
+dbWriteTable(mydb, "airlines", df_airline, append = T,row.names=FALSE)
+dbWriteTable(mydb, "conditions", df_conditions, append = T,row.names=FALSE)
+dbWriteTable(mydb, "incidents", df_incidents, append = T,row.names=FALSE)
+```
+
+
+## Data Load Testing
+7. Show that the loading of the data worked by displaying parts of each table  
+ 
+```{sql TestCond, connection = mydb}
+SELECT * FROM conditions
+LIMIT 5;
+```
+As we can see, the `conditions` table has cid (PK), condition (data fetched from Sky Conditons) and explanation (which is empty for now as a part of the expansion process). This lookup table will provide the conditions for the `condition` variable in incidents table as well. 
+
+```{sql TestAirport, connection = mydb}
+SELECT * FROM airports
+LIMIT 5;
+```
+As we can see, the `airports` table has unique primary key aid, airportName, airportCode (which is empty for now as a part of the expansion process) and the state of the airport in variable state.
+
+```{sql TestAirline, connection = mydb}
+SELECT * FROM airlines
+LIMIT 5;
+```
+
+```{sql TestIncident, connection=mydb}
+SELECT * FROM incidents
+LIMIT 5;
+```
+The `incidents` table is the most important table in our schema as it contains all the information about the bird strike incident and also links to the other three tables using FK relationships. Apart from this, almost all variables are in the correct datatype. 
+
+
+## SQL Query I
+8) Create a SQL query against your database to find the 10 states with the greatest number of incidents.
+```{sql queryIPS, connection = mydb}
+SELECT a.state , COUNT(*) AS Incidents_Per_State 
+  FROM incidents i INNER JOIN airports a ON i.origin = a.aid
+  GROUP BY a.state
+  ORDER BY Incidents_Per_State DESC
+  LIMIT 10;
+```
+
+
+## SQL Query II
+9) Create a SQL query against your database to find the airlines that had an above average number bird strike incidents.
+```{sql queryBIC, connection = mydb}
+SELECT a.airlineName , COUNT(*) as Incidents_Per_Airline 
+  FROM incidents i INNER JOIN airlines a on i.airline = a.eid
+  GROUP BY a.airlineName
+  HAVING Incidents_Per_Airline > (SELECT AVG(incident_count) FROM 
+    (SELECT COUNT(*) AS incident_count 
+      FROM incidents
+      GROUP BY airline) AS bird_incident_counts);
+```
+
+
+## SQL Query & Tabular Display
+10) Create a SQL query against your database to find the number of bird strike incidents by month and by flight phase (across all years).Display the first six rows of the dataframe.
+```{sql queryAvg, connection=mydb}
+SELECT MONTH(`dep.date`) as Months, `flight.phase`, COUNT(rid) AS bird_incidents FROM incidents
+  GROUP BY Months, `flight.phase`
+  ORDER BY bird_incidents DESC
+  LIMIT 6;
+```
+
+```{r queryAvgDf, eval = T, warning = F}
+query3 <- "SELECT MONTH(`dep.date`) as Months, `flight.phase`, COUNT(rid) AS bird_incidents
+          FROM incidents
+          GROUP BY Months,`flight.phase`
+          ORDER BY Months;"
+
+queryAvg <- dbGetQuery(mydb, query3)
+```
+
+
+## Visualization
+11) Using the dataframe from Question 10 above, build a scatter plot that plots month along the x-axis versus number of incidents (across all airlines and flight phases). Adorn the graph with appropriate axis labels, titles, legend, data labels, etc.
+
+```{r Plot, eval = T, warning = F}
+plot(x = queryAvg$Month, y = queryAvg$bird_incidents, pch = 19,
+     col = as.factor(queryAvg$`flight.phase`),
+     xlab = 'Months', 
+     ylab = 'No. of Bird Incidents', 
+     main = 'No. of Birds Incidents per Month')
+legend("topleft", legend = unique(queryAvg$`flight.phase`), 
+       col = as.factor(queryAvg$`flight.phase`), pch = 19)
+```
+
+
+## Stored Procedures
+12) Create a stored procedure in MySQL that adds a new incident to the database. 
+
+DROP if the stored procedure exists
+```{sql dprod2, connection=mydb}
+DROP PROCEDURE IF EXISTS NewAirport;
+```
+```{sql dprod3, connection=mydb}
+DROP PROCEDURE IF EXISTS NewCondition;
+```
+```{sql dprod4, connection=mydb}
+DROP PROCEDURE IF EXISTS NewAirline;
+```
+```{sql dprod1, connection=mydb}
+DROP PROCEDURE IF EXISTS NewIncident;
+```
+
+Defining Stored Procedure to add a new airport to the Airports table
+This stored procedure `NewAirport` will be called if a new field in the 'airport' table is attempted to be inserted. This will insert the new airportName and the state into the airports table and aid will be assigned to it so that a primary-foreign key relationship can be established between airports and incidents.
+```{r prod1, eval = T, warning = F}
+cmd0 ="
+CREATE PROCEDURE NewAirport(
+	IN newAirportName VARCHAR(32),
+	IN newAirportState VARCHAR(32)
+)
+BEGIN
+	INSERT INTO airports(airportName, state)
+	VALUES (newAirportName, newAirportState); 
+END "
+
+dbExecute(mydb, cmd0)
+```
+
+Defining Stored Procedure to add a new airline to the Airline table
+This stored procedure `NewAirline` will be called if a new field in the 'airlines' table is attempted to be inserted. This will insert the new airlineName eid will be assigned to it so that a primary-foreign key relationship can be established between airlines and incidents.
+```{r prod2, eval = T, warning = F}
+cmd1 ="
+CREATE PROCEDURE NewAirline(
+	IN newAirlineName VARCHAR(32)
+	)
+BEGIN
+	INSERT INTO airlines(airlineName)
+	VALUES (newAirlineName); 
+END "
+
+dbExecute(mydb,cmd1)
+```
+
+Defining Stored Procedure to add a new condition to the Condition table
+This stored procedure `NewCondition` will be called if a new field in the 'conditions' table is attempted to be inserted. This will insert the new condition into the conditions table and cid will be assigned to it so that a primary-foreign key relationship can be established between conditions and incidents.
+```{r prod3, eval = T, warning = F}
+cmd2 ="
+CREATE PROCEDURE NewCondition(
+	IN newCondName VARCHAR(32)
+)
+BEGIN
+	INSERT INTO conditions(`condition`)
+	VALUES (newCondName); 
+END "
+
+dbExecute(mydb,cmd2)
+```
+
+Defining Stored Procedure to add a new incident to the Incident table
+This stored procedure `NewIncident` will be called if a new field in the 'incidents' table is attempted to be inserted. This will insert the new incident into the incident table.
+The procedure checks if a value exists in the respective table. If not the appropriate stored procedure defined above are called and id will be assigned so that a primary-foreign key relationship can be established between incident and the respective table.
+```{r prod4, eval = T, warning = F}
+cmd3 ="
+CREATE PROCEDURE NewIncident(
+	IN rid INTEGER,
+  IN depdate DATE,
+	IN aName VARCHAR(32),
+	IN aState VARCHAR(32),
+	IN airline VARCHAR(32),
+	IN aircraft VARCHAR(32),
+	IN flightPhase VARCHAR(32),
+	IN alt INTEGER,
+	IN cond VARCHAR(32),
+	IN warn BOOLEAN)
+
+BEGIN
+  IF(EXISTS(SELECT * from airports WHERE airportName = aName AND state = aState)) = 0 THEN
+  CALL NewAirport(aName, aState);
+  END IF;
+  
+  IF(EXISTS(SELECT * from airlines WHERE airlineName = airline)) = 0 THEN
+  CALL NewAirline(airline);
+  END IF;
+  
+  IF(EXISTS(SELECT * from conditions WHERE `condition` = cond)) = 0 THEN
+  CALL NewCondition(cond);
+  END IF;
+  
+  INSERT INTO incidents(rid, `dep.date`, origin, airline, aircraft,
+                        `flight.phase`, altitude, conditions, warned)
+	
+	VALUES (rid, depdate, (SELECT DISTINCT(aid) from airports WHERE airportName=aName), 
+	 (SELECT DISTINCT(eid) from airlines WHERE airlineName = airline), aircraft, 
+	 flightPhase, alt, (SELECT DISTINCT(cid) from conditions WHERE `condition` = cond), warn); 
+END;"
+
+dbExecute(mydb,cmd3)
+```
+
+Insert new incident value
+```{r InsertProd, eval = T, warning = F}
+sqlstmt = 'CALL NewIncident(9999, "2023-03-03", "Test Airport", "Test State", 
+            "Test airline", "Airplane", "takeoff", 100, "Overcast", TRUE);'
+
+res = dbSendQuery(mydb,sqlstmt)
+print(res)
+data = fetch(res,n=-1)
+
+while(dbMoreResults(mydb)==TRUE){
+  dbNextResult(mydb)
+}
+```
+
+The stored procedure inserts the new data into the incidents table.
+```{r check_sp2, eval = T, warning = F}
+check_stmnt <- dbGetQuery(mydb, "SELECT * FROM incidents WHERE rid = 9999;")
+check_stmnt
+```
+
+New value added to airlines table
+```{sql testingAirline, connection=mydb}
+SELECT * FROM airlines
+ORDER BY eid DESC
+LIMIT 3;
+```
+
+New value added to airports table
+```{sql testingAirport, connection=mydb}
+SELECT * FROM airports
+ORDER BY aid DESC
+LIMIT 3;
+```
+
+**Disconnecting the database**
+```{r disconnect}
+dbDisconnect(mydb)
+```
