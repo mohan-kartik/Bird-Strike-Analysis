@@ -2,36 +2,35 @@
 Build a database that can be used to analyze bird strikes based on data fetched from [FAA](https://data.world/hhaveliw/data-visualization-bird-strike]).  
 
 ## Objectives:
-- a logical data model,
-- realized the relational schema in MySQL, 
-- loaded data into the database, 
-- executed analytical SQL queries, 
-- and finally performed some simple visualization of the data
+- build a logical data model,
+- realize the relational schema in MySQL, 
+- load data into the database, 
+- execute analytical SQL queries, 
+- performed some visualization of the data
+- build a stored procedure
 
 ## Tasks
-Before starting the project, make sure to read all the questions and inspect the CSV data file to understand its structure.
+- Set up and configure a MySQL Server 
 
+- Create the database schema described below:
+  - Create a table called "incidents" to store wildlife strike incidents with the provided schema.
+  - Create a table called "airports" to store airport and state information with the provided schema.
+  - Link the "incidents" and "airports" tables using foreign key constraints.
+  - Create a lookup table called "conditions" with the provided schema.
+  - Create a table called "airlines" to store airline information with the provided schema.
+  - Link the "incidents" and "airlines" tables using foreign key constraints.
+  
+- Populate the tables in the database with the data 
 
+- Perform Data Analysis
+  - Create a SQL query to find the 10 states with the greatest number of incidents.
+  - Create a SQL query to find the airlines with an above-average number of bird strike incidents.
+  - Create a SQL query to find the number of bird strike incidents by month and by flight phase.
 
+-  Visualize the data
+  - Build a scatter plot that plots month along the x-axis versus the number of incidents (across all airlines and flight phases).
 
-
-Create a table called "incidents" to store wildlife strike incidents with the provided schema.
-Create a table called "airports" to store airport and state information with the provided schema.
-Link the "incidents" and "airports" tables using foreign key constraints.
-Create a lookup table called "conditions" with the provided schema.
-Create a table called "airlines" to store airline information with the provided schema.
-Link the "incidents" and "airlines" tables using foreign key constraints.
-Add code chunks to test the table definitions without evaluation.
-Load Data into the Database (20 pts / 8 hrs)
-Download the bird strikes CSV data file and place it in the same folder as your R Notebook.
-Load the CSV data into a dataframe called "bds.raw" in R.
-Populate the tables in the database with the data from the appropriate columns using the provided table definitions.
-Map the values in the data file to appropriate values in the lookup tables.
-Verify that the data loading worked by displaying parts of each table.
-Perform Data Analysis (3 pts / 1 hr)
-Create a SQL query to find the 10 states with the greatest number of incidents.
-Create a SQL query to find the airlines with
-
+- Create a stored procedure in MySQL that adds a new incident to the database.
 
 
 
