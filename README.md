@@ -1,4 +1,6 @@
-# Bird Strike Analysis
+<p align = "center"><img src='https://github.com/mohan-kartik/Bird-Strike-Analysis-in-SQL/assets/42971268/628088f6-8327-467b-b3c7-a60521c6cf88'>
+
+## Overview
 Build a database that can be used to analyze bird strikes based on data fetched from [FAA](https://data.world/hhaveliw/data-visualization-bird-strike]).  
 
 ## Objectives:
